@@ -2,17 +2,15 @@
 using namespace std;
 
 int main() {
-    int nilai;
+    int x;
+    x = 10;
+    cout << "Nilai dari variabel x adalah: " << x << endl;
 
+    int y = 20;
+    int z = x + y;
 
-    cout << "Masukkan nilai ujian: ";
-    cin >> nilai;
-
-    if (nilai >= 60) {
-        cout << "Selamat, Anda Lulus!" << endl;
-    } else {
-        cout << "Maaf, Anda Tidak Lulus." << endl;
-    }
+    cout << "Nilai dari variabel y adalah: " << y << endl;
+    cout << "Hasil penjumlahan x + y = " << z << endl;
 
     return 0;
 }
