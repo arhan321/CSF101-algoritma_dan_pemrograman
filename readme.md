@@ -2,7 +2,7 @@
 
 ## BAHASA YANG DIGUNAKAN
 ```
-C++, PYTHON
+C++, PYTHON (Jika memungkinkan)
 ```
 
 ## KENAPA HARUS BELAJAR ALGORITMA?
