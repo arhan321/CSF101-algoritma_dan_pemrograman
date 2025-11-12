@@ -1,0 +1,14 @@
+services:
+  machine_learning:
+    build:
+      context: .     
+      dockerfile: Dockerfile
+    container_name: machine_learning
+    environment:
+      COL_LMS: LMSLogin    
+      COL_GRADE: TaskScore  
+    ports:
+      - "5000:5000"         
+    volumes:
+      - ./app:/app
+    restart: unless-stopped
