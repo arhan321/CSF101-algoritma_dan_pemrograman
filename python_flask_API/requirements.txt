@@ -2,3 +2,5 @@ Flask
 pandas
 plotly
 mysql-connector-python
+flasgger
+PyYAML

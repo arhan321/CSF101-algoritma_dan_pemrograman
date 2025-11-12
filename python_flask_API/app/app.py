@@ -1,11 +1,19 @@
 from flask import Flask, jsonify, request
 import mysql.connector
-import pandas as pd
+from flasgger import Swagger, swag_from
+from collections import OrderedDict
 import os
 
 app = Flask(__name__)
 
-# Konfigurasi database (pakai koneksi dari docker-compose)
+# --- Swagger Configuration ---
+app.config['SWAGGER'] = {
+    'title': 'Mahasiswa API',
+    'uiversion': 3
+}
+swagger = Swagger(app)
+
+# --- Database Config ---
 db_config = {
     "host": "db_python",
     "user": "root",
@@ -13,11 +21,11 @@ db_config = {
     "database": "mahasiswa"
 }
 
-# ====== KONFIGURASI TOKEN ======
-API_TOKEN = "SECRET123"  
+API_TOKEN = "SECRET123"
 
+
+# --- Token Auth Middleware ---
 def token_required(f):
-    """Middleware untuk validasi Bearer Token"""
     def decorator(*args, **kwargs):
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith("Bearer "):
@@ -32,7 +40,7 @@ def token_required(f):
     return decorator
 
 
-# ====== INIT DATABASE (CREATE TABLE kalau belum ada) ======
+# --- Inisialisasi Database ---
 def init_db():
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor()
@@ -48,15 +56,79 @@ def init_db():
     conn.close()
 
 
-# ====== ROUTES ======
+# ========================= ROUTES =========================
 
 @app.route('/')
 def home():
+    """Home Endpoint
+    ---
+    responses:
+      200:
+        description: Flask API is running
+    """
     return jsonify({"message": "Flask API is running!"})
 
-# ---------- CREATE ----------
+
+@app.route('/users', methods=['GET'])
+@token_required
+@swag_from({
+    'tags': ['Users'],
+    'description': 'Get all users from database',
+    'responses': {
+        200: {
+            'description': 'List of all users',
+            'examples': {
+                'application/json': [
+                    {"id": 1, "name": "ARHAN", "email": "arhan@gmail.com"}
+                ]
+            }
+        }
+    }
+})
+def get_users():
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT id, name, email FROM users ORDER BY id ASC")
+    users = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    ordered_users = [
+        OrderedDict([
+            ("id", u["id"]),
+            ("name", u["name"]),
+            ("email", u["email"])
+        ])
+        for u in users
+    ]
+    return jsonify(ordered_users)
+
+
 @app.route('/users', methods=['POST'])
 @token_required
+@swag_from({
+    'tags': ['Users'],
+    'description': 'Add a new user',
+    'parameters': [
+        {
+            'name': 'body',
+            'in': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string'},
+                    'email': {'type': 'string'}
+                },
+                'example': {'name': 'ARHAN', 'email': 'arhan@example.com'}
+            }
+        }
+    ],
+    'responses': {
+        201: {'description': 'User added successfully'},
+        400: {'description': 'Invalid input'}
+    }
+})
 def add_user():
     data = request.get_json()
     name = data.get("name")
@@ -75,28 +147,23 @@ def add_user():
     return jsonify({"message": "User added successfully"}), 201
 
 
-# ---------- READ ALL ----------
-@app.route('/users', methods=['GET'])
-@token_required
-def get_users():
-    conn = mysql.connector.connect(**db_config)
-    df = pd.read_sql("SELECT * FROM users", conn)
-    conn.close()
-
-    if 'id' in df.columns:
-        cols = ['id'] + [col for col in df.columns if col != 'id']
-        df = df[cols]
-
-    return jsonify(df.to_dict(orient='records'))
-
-
-# ---------- READ ONE ----------
 @app.route('/users/<int:user_id>', methods=['GET'])
 @token_required
+@swag_from({
+    'tags': ['Users'],
+    'description': 'Get a specific user by ID',
+    'parameters': [
+        {'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True}
+    ],
+    'responses': {
+        200: {'description': 'User found'},
+        404: {'description': 'User not found'}
+    }
+})
 def get_user(user_id):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    cursor.execute("SELECT id, name, email FROM users WHERE id = %s", (user_id,))
     user = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -107,9 +174,28 @@ def get_user(user_id):
         return jsonify({"error": "User not found"}), 404
 
 
-# ---------- UPDATE ----------
 @app.route('/users/<int:user_id>', methods=['PUT'])
 @token_required
+@swag_from({
+    'tags': ['Users'],
+    'description': 'Update an existing user',
+    'parameters': [
+        {'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True},
+        {
+            'name': 'body',
+            'in': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string'},
+                    'email': {'type': 'string'}
+                },
+                'example': {'name': 'New Name', 'email': 'new@email.com'}
+            }
+        }
+    ]
+})
 def update_user(user_id):
     data = request.get_json()
     name = data.get("name")
@@ -129,9 +215,17 @@ def update_user(user_id):
     return jsonify({"message": "User updated successfully"})
 
 
-# ---------- DELETE ----------
 @app.route('/users/<int:user_id>', methods=['DELETE'])
 @token_required
+@swag_from({
+    'tags': ['Users'],
+    'description': 'Delete a user by ID',
+    'parameters': [{'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True}],
+    'responses': {
+        200: {'description': 'User deleted successfully'},
+        404: {'description': 'User not found'}
+    }
+})
 def delete_user(user_id):
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor()
@@ -148,5 +242,5 @@ def delete_user(user_id):
 
 
 if __name__ == '__main__':
-    init_db()  # pastikan tabel ada dulu
+    init_db()
     app.run(host='0.0.0.0', port=5000)
