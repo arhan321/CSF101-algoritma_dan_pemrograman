@@ -1,0 +1,33 @@
+services:
+  api_python:
+    build:
+      context: .     
+      dockerfile: Dockerfile
+    container_name: api_python
+    environment:
+      COL_LMS: LMSLogin    
+      COL_GRADE: TaskScore  
+    ports:
+      - "3000:5000"         
+    volumes:
+      - ./app:/app
+    restart: unless-stopped
+
+  db_python:
+    image: mariadb:10.2
+    container_name: db_python
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "12367:3306"
+    volumes:
+      - ./database/data:/var/lib/mysql
+      - ./database/conf.d:/etc/mysql/conf.d:ro
+    environment:
+      MYSQL_USER: root
+      MYSQL_PASSWORD: 123
+      MYSQL_ROOT_PASSWORD: 123
+      TZ: Asia/Jakarta
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql  
+    read_only: false
