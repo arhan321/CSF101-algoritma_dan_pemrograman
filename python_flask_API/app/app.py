@@ -6,241 +6,266 @@ import os
 
 app = Flask(__name__)
 
-# --- Swagger Configuration ---
-app.config['SWAGGER'] = {
-    'title': 'Mahasiswa API',
-    'uiversion': 3
-}
-swagger = Swagger(app)
-
-# --- Database Config ---
+# ====== CONFIG ======
+API_TOKEN = os.getenv("API_TOKEN", "SECRET123")
 db_config = {
     "host": "db_python",
     "user": "root",
     "password": "123",
-    "database": "mahasiswa"
+    "database": "mahasiswa",
 }
 
-API_TOKEN = "SECRET123"
+# ====== SWAGGER TEMPLATE (Authorize button for Bearer Token) ======
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "Mahasiswa API",
+        "version": "0.0.1",
+        "description": "CRUD Mahasiswa dengan Bearer Token Authorization",
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Masukkan token seperti ini: **Bearer SECRET123**",
+        }
+    },
+    "tags": [{"name": "Mahasiswa", "description": "CRUD Data Mahasiswa"}],
+    "security": [{"BearerAuth": []}],  # otomatis untuk semua endpoint
+}
+
+# ====== SWAGGER CONFIG ======
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec_1",
+            "route": "/apispec_1.json",
+            "rule_filter": lambda rule: True,   # tampilkan semua endpoint
+            "model_filter": lambda tag: True,   # semua tag
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/apidocs/",
+    "uiversion": 3,
+}
 
 
-# --- Token Auth Middleware ---
+
+# ====== TOKEN MIDDLEWARE ======
 def token_required(f):
     def decorator(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith("Bearer "):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
             return jsonify({"error": "Authorization header missing or invalid"}), 401
-
-        token = auth_header.split(" ")[1]
+        token = auth.split(" ", 1)[1].strip()
         if token != API_TOKEN:
             return jsonify({"error": "Invalid or expired token"}), 403
-
         return f(*args, **kwargs)
     decorator.__name__ = f.__name__
     return decorator
 
-
-# --- Inisialisasi Database ---
+# ====== INIT DATABASE ======
 def init_db():
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    cursor.execute("""
+    cur = conn.cursor()
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100),
             email VARCHAR(100)
         )
-    """)
+        """
+    )
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
 
-
 # ========================= ROUTES =========================
-
-@app.route('/')
+@app.route("/")
 def home():
     """Home Endpoint
     ---
+    tags:
+      - Mahasiswa
     responses:
       200:
-        description: Flask API is running
+        description: API status
     """
     return jsonify({"message": "Flask API is running!"})
 
 
-@app.route('/users', methods=['GET'])
+@app.route("/users", methods=["GET"])
 @token_required
 @swag_from({
-    'tags': ['Users'],
-    'description': 'Get all users from database',
-    'responses': {
+    "tags": ["Mahasiswa"],
+    "description": "Ambil semua data mahasiswa",
+    "responses": {
         200: {
-            'description': 'List of all users',
-            'examples': {
-                'application/json': [
+            "description": "Daftar mahasiswa",
+            "examples": {
+                "application/json": [
                     {"id": 1, "name": "ARHAN", "email": "arhan@gmail.com"}
                 ]
-            }
+            },
         }
-    }
+    },
 })
 def get_users():
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, name, email FROM users ORDER BY id ASC")
-    users = cursor.fetchall()
-    cursor.close()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT id, name, email FROM users ORDER BY id ASC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
-    ordered_users = [
-        OrderedDict([
-            ("id", u["id"]),
-            ("name", u["name"]),
-            ("email", u["email"])
-        ])
-        for u in users
-    ]
-    return jsonify(ordered_users)
+    data = [OrderedDict([("id", r["id"]), ("name", r["name"]), ("email", r["email"])]) for r in rows]
+    return jsonify(data)
 
 
-@app.route('/users', methods=['POST'])
+@app.route("/users", methods=["POST"])
 @token_required
 @swag_from({
-    'tags': ['Users'],
-    'description': 'Add a new user',
-    'parameters': [
-        {
-            'name': 'body',
-            'in': 'body',
-            'required': True,
-            'schema': {
-                'type': 'object',
-                'properties': {
-                    'name': {'type': 'string'},
-                    'email': {'type': 'string'}
-                },
-                'example': {'name': 'ARHAN', 'email': 'arhan@example.com'}
-            }
-        }
-    ],
-    'responses': {
-        201: {'description': 'User added successfully'},
-        400: {'description': 'Invalid input'}
-    }
+    "tags": ["Mahasiswa"],
+    "description": "Tambah data mahasiswa baru",
+    "parameters": [{
+        "name": "body",
+        "in": "body",
+        "required": True,
+        "schema": {
+            "type": "object",
+            "required": ["name", "email"],
+            "properties": {
+                "name": {"type": "string"},
+                "email": {"type": "string"},
+            },
+            "example": {"name": "ARHAN", "email": "arhan@example.com"},
+        },
+    }],
+    "responses": {
+        201: {"description": "Berhasil menambah mahasiswa"},
+        400: {"description": "Input tidak valid"},
+    },
 })
 def add_user():
-    data = request.get_json()
-    name = data.get("name")
-    email = data.get("email")
+    data = request.get_json(silent=True) or {}
+    name, email = data.get("name"), data.get("email")
 
     if not name or not email:
         return jsonify({"error": "Name and email are required"}), 400
 
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO users (name, email) VALUES (%s, %s)", (name, email))
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (name, email) VALUES (%s, %s)", (name, email))
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
 
     return jsonify({"message": "User added successfully"}), 201
 
 
-@app.route('/users/<int:user_id>', methods=['GET'])
+@app.route("/users/<int:user_id>", methods=["GET"])
 @token_required
 @swag_from({
-    'tags': ['Users'],
-    'description': 'Get a specific user by ID',
-    'parameters': [
-        {'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True}
+    "tags": ["Mahasiswa"],
+    "description": "Ambil data mahasiswa berdasarkan ID",
+    "parameters": [
+        {"name": "user_id", "in": "path", "type": "integer", "required": True},
     ],
-    'responses': {
-        200: {'description': 'User found'},
-        404: {'description': 'User not found'}
-    }
+    "responses": {
+        200: {"description": "Data ditemukan"},
+        404: {"description": "Tidak ditemukan"},
+    },
 })
-def get_user(user_id):
+def get_user(user_id: int):
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, name, email FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
-    cursor.close()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT id, name, email FROM users WHERE id=%s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
 
-    if user:
-        return jsonify(user)
-    else:
+    if not row:
         return jsonify({"error": "User not found"}), 404
 
+    return jsonify(OrderedDict([("id", row["id"]), ("name", row["name"]), ("email", row["email"])]))
 
-@app.route('/users/<int:user_id>', methods=['PUT'])
+
+@app.route("/users/<int:user_id>", methods=["PUT"])
 @token_required
 @swag_from({
-    'tags': ['Users'],
-    'description': 'Update an existing user',
-    'parameters': [
-        {'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True},
+    "tags": ["Mahasiswa"],
+    "description": "Update data mahasiswa",
+    "parameters": [
+        {"name": "user_id", "in": "path", "type": "integer", "required": True},
         {
-            'name': 'body',
-            'in': 'body',
-            'required': True,
-            'schema': {
-                'type': 'object',
-                'properties': {
-                    'name': {'type': 'string'},
-                    'email': {'type': 'string'}
+            "name": "body",
+            "in": "body",
+            "required": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "email": {"type": "string"},
                 },
-                'example': {'name': 'New Name', 'email': 'new@email.com'}
-            }
-        }
-    ]
+                "example": {"name": "Nama Baru", "email": "baru@email.com"},
+            },
+        },
+    ],
+    "responses": {
+        200: {"description": "Data berhasil diupdate"},
+        404: {"description": "Mahasiswa tidak ditemukan"},
+    },
 })
-def update_user(user_id):
-    data = request.get_json()
-    name = data.get("name")
-    email = data.get("email")
+def update_user(user_id: int):
+    data = request.get_json(silent=True) or {}
+    name, email = data.get("name"), data.get("email")
 
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET name=%s, email=%s WHERE id=%s", (name, email, user_id))
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET name=%s, email=%s WHERE id=%s", (name, email, user_id))
     conn.commit()
-    updated_rows = cursor.rowcount
-    cursor.close()
+    updated = cur.rowcount
+    cur.close()
     conn.close()
 
-    if updated_rows == 0:
+    if updated == 0:
         return jsonify({"error": "User not found"}), 404
 
     return jsonify({"message": "User updated successfully"})
 
 
-@app.route('/users/<int:user_id>', methods=['DELETE'])
+@app.route("/users/<int:user_id>", methods=["DELETE"])
 @token_required
 @swag_from({
-    'tags': ['Users'],
-    'description': 'Delete a user by ID',
-    'parameters': [{'name': 'user_id', 'in': 'path', 'type': 'integer', 'required': True}],
-    'responses': {
-        200: {'description': 'User deleted successfully'},
-        404: {'description': 'User not found'}
-    }
+    "tags": ["Mahasiswa"],
+    "description": "Hapus data mahasiswa",
+    "parameters": [
+        {"name": "user_id", "in": "path", "type": "integer", "required": True},
+    ],
+    "responses": {
+        200: {"description": "Data berhasil dihapus"},
+        404: {"description": "Mahasiswa tidak ditemukan"},
+    },
 })
-def delete_user(user_id):
+def delete_user(user_id: int):
     conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
     conn.commit()
-    deleted_rows = cursor.rowcount
-    cursor.close()
+    deleted = cur.rowcount
+    cur.close()
     conn.close()
 
-    if deleted_rows == 0:
+    if deleted == 0:
         return jsonify({"error": "User not found"}), 404
 
     return jsonify({"message": "User deleted successfully"})
 
-
-if __name__ == '__main__':
+swagger = Swagger(app, template=swagger_template, config=swagger_config)
+if __name__ == "__main__":
     init_db()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host="0.0.0.0", port=5000)
