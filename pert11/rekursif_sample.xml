@@ -1,0 +1,10 @@
+<menu>
+    <makanan>
+        <nama>Nasi Goreng</nama>
+        <harga>20000</harga>
+    </makanan>
+    <makanan>
+        <nama>Mie Ayam</nama>
+        <harga>15000</harga>
+    </makanan>
+</menu>
